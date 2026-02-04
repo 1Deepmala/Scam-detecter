@@ -1,0 +1,13 @@
+{
+  "sessionId": "test-session-01",
+  "message": {
+    "sender": "scammer",
+    "text": "Your account is blocked. Send money to upi@scammer immediately.",
+    "timestamp": "2026-02-03T10:00:00Z"
+  },
+  "conversationHistory": [],
+  "metadata": {
+    "language": "English",
+    "locale": "IN"
+  }
+}
