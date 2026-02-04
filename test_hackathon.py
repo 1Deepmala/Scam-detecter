@@ -2,7 +2,7 @@ import requests
 import json
 
 # 1. The Setup
-url = "https://scam-detecter-wtut.onrender.com/api/honey-pot" 
+url = "https://scam-detector-final.onrender.com/api/honey-pot" 
 api_key = "my_secure_password_123"
 
 # 2. The Data (No external file needed!)
