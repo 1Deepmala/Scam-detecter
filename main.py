@@ -2,55 +2,33 @@ import os
 import re
 import requests
 from fastapi import FastAPI, Header, HTTPException, BackgroundTasks, Request
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel
+from typing import List, Optional, Any
 from google import genai 
 
 # ==========================================
 # 🛑 PASTE YOUR KEY INSIDE THESE QUOTES 🛑
 # ==========================================
-GEMINI_API_KEY = "AIzaSyDV8Hjt7JZU4S-k3t3bm90SgUhAiMEduys" 
-
+GEMINI_API_KEY = "AIzaSyDV8Hjt7JZU4S-k3t3bm90SgUhAiMEduys"
 # Your Hackathon Secret 
 MY_SECRET_KEY = "my_secure_password_123" 
 CALLBACK_URL = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"
 
 app = FastAPI()
 
-# Data Models
-class Message(BaseModel):
-    sender: str
-    text: str
-    # Make timestamp optional because sometimes testers skip it
-    timestamp: Optional[str] = "2026-01-01T00:00:00Z" 
-
-class Metadata(BaseModel):
-    channel: str = "SMS"
-    language: str = "English"
-    locale: str = "IN"
-
-class ScamRequest(BaseModel):
-    # ---------------------------------------------------------
-    # FIX: Accept both 'sessionId' AND 'sessionld' (PDF Typo)
-    # ---------------------------------------------------------
-    sessionId: Optional[str] = None
-    sessionld: Optional[str] = None 
-    
-    message: Message
-    conversationHistory: List[Message] = []
-    metadata: Optional[Metadata] = None
-
-class ExtractedIntelligence(BaseModel):
-    bankAccounts: List[str] = []
-    upilds: List[str] = []
-    phishingLinks: List[str] = []
-    phoneNumbers: List[str] = []
-    agentNotes: str = ""
-
+# Data Models - MADE SUPER FLEXIBLE TO STOP ERRORS
 class APIResponse(BaseModel):
     status: str
     scamDetected: bool
-    extractedIntelligence: ExtractedIntelligence
+    extractedIntelligence: dict
+
+# We use 'dict' instead of strict models so it NEVER fails validation
+class ScamRequest(BaseModel):
+    sessionId: Optional[str] = None
+    sessionld: Optional[str] = None  # Handles the PDF typo
+    message: Optional[dict] = None   # Accepts ANY message format
+    conversationHistory: Optional[list] = []
+    metadata: Optional[dict] = None
 
 def extract_pII(text: str):
     return {
@@ -85,27 +63,33 @@ async def honeypot_endpoint(request: ScamRequest, background_tasks: BackgroundTa
         print("CRITICAL ERROR: You didn't paste the Google Key in main.py!")
         raise HTTPException(status_code=500, detail="Server Error: Missing Google Key")
     
-    # 3. Handle PDF Typo (sessionld vs sessionId)
+    # 3. Safely get the text (Even if the tester sends weird data)
+    user_text = "Default scam text"
+    if request.message and "text" in request.message:
+        user_text = request.message["text"]
+    
+    # 4. Handle PDF Typo (sessionld vs sessionId)
     real_session_id = request.sessionId or request.sessionld or "unknown-session"
 
-    # 4. AI Processing
+    # 5. AI Processing
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        prompt = f"You are a scam victim. Reply to: {request.message.text}"
+        prompt = f"You are a scam victim. Reply to: {user_text}"
         response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
         agent_reply = response.text
     except Exception as e:
         print(f"GOOGLE AI ERROR: {e}") 
         agent_reply = "Connection error, but I am listening."
 
-    # 5. Extract Intel
-    intel = extract_pII(request.message.text)
+    # 6. Extract Intel
+    intel = extract_pII(user_text)
     
+    # Always fire callback if we found something
     if intel['upilds'] or intel['phishingLinks']:
         background_tasks.add_task(send_callback, real_session_id, intel)
 
     return APIResponse(
         status="success",
         scamDetected=True,
-        extractedIntelligence=ExtractedIntelligence(**intel, agentNotes=agent_reply)
+        extractedIntelligence={**intel, "agentNotes": agent_reply}
     )
